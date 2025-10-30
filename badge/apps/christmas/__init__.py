@@ -231,8 +231,9 @@ def get_current_date():
         month = current_time[1]
         day = current_time[2]
         
-        # Sanity check: if year is still 2021 or earlier, NTP didn't actually work
-        if year < 2022:
+        # Sanity check: if year is unreasonable, NTP didn't actually work
+        # Valid range: 2025-2100 (the badge was created in 2025)
+        if year < 2025 or year > 2100:
             return None
         
         return (year, month, day)

@@ -5,6 +5,7 @@ sys.path.insert(0, "/system/apps/menu")
 os.chdir("/system/apps/menu")
 
 import math
+import time
 from badgeware import screen, PixelFont, Image, SpriteSheet, is_dir, file_exists, shapes, brushes, io, run
 from icon import Icon
 import ui
@@ -12,6 +13,21 @@ import ui
 mona = SpriteSheet("/system/assets/mona-sprites/mona-default.png", 11, 1)
 screen.font = PixelFont.load("/system/assets/fonts/ark.ppf")
 # screen.antialias = Image.X2
+
+# Month names for date formatting
+MONTH_NAMES = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"
+]
+
+def format_current_date():
+    """Format current date as 'DD Month YYYY'"""
+    now = time.localtime()
+    day = now[2]
+    month = now[1]
+    year = now[0]
+    month_name = MONTH_NAMES[month - 1]
+    return f"{day:02d} {month_name} {year}"
 
 # Auto-discover apps with __init__.py
 apps = []
@@ -137,6 +153,12 @@ def update():
         w, _ = screen.measure_text(page_label)
         screen.brush = brushes.color(211, 250, 55, 150)
         screen.text(page_label, 160 - w - 5, 112)
+    
+    # draw current date at the bottom
+    date_label = format_current_date()
+    w, _ = screen.measure_text(date_label)
+    screen.brush = brushes.color(211, 250, 55, 150)
+    screen.text(date_label, 80 - (w / 2), 112)
 
     if alpha <= MAX_ALPHA:
         screen.brush = brushes.color(0, 0, 0, 255 - alpha)

@@ -52,6 +52,9 @@ class Snowflake:
 # Create snowflakes
 snowflakes = [Snowflake() for _ in range(15)]
 
+# Base days in each month (non-leap year)
+BASE_DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
 def get_days_until_christmas():
     """Calculate days until next Christmas (Dec 25)"""
     now = time.localtime()
@@ -67,7 +70,7 @@ def get_days_until_christmas():
     
     # Helper function to get days in month for a specific year
     def get_days_in_month(year):
-        days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+        days = BASE_DAYS_IN_MONTH.copy()
         is_leap = (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0)
         if is_leap:
             days[1] = 29
@@ -109,20 +112,20 @@ def update():
     screen.font = large_font
     screen.brush = TEXT_BRUSH
     
-    # Main number
+    # Main number (at top)
     days_text = str(days)
     w, h = screen.measure_text(days_text)
-    screen.text(days_text, 80 - (w // 2), 40)
+    screen.text(days_text, 80 - (w // 2), 30)
     
-    # Label
+    # Labels
     screen.font = small_font
     label = "days until"
     w, _ = screen.measure_text(label)
-    screen.text(label, 80 - (w // 2), 25)
+    screen.text(label, 80 - (w // 2), 60)
     
     label2 = "Christmas"
     w, _ = screen.measure_text(label2)
-    screen.text(label2, 80 - (w // 2), 65)
+    screen.text(label2, 80 - (w // 2), 75)
 
 if __name__ == "__main__":
     run(update)

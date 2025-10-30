@@ -73,9 +73,23 @@ _cached_time = None
 _last_fetch_attempt = 0
 _fetch_success = False
 _last_error_type = None  # Track last error for on-screen display
+_current_api_index = 0  # Track which API to try next
 FETCH_INTERVAL = 60 * 60 * 1000  # Try to fetch once per hour (in milliseconds) when successful
 RETRY_INTERVAL = 5 * 1000  # Retry every 5 seconds (in milliseconds) when failed
 MAX_ERROR_TYPE_LENGTH = 10  # Maximum characters to display for error type
+
+# Multiple time API endpoints for fallback support
+# Each entry is (url, parse_function_name)
+TIME_APIS = [
+    # WorldTimeAPI - returns {"datetime": "2025-10-30T01:23:45.123456+00:00", ...}
+    ("https://worldtimeapi.org/api/timezone/Etc/UTC", "parse_worldtime"),
+    # TimeAPI.io - returns {"year": 2025, "month": 10, "day": 30, ...}
+    ("https://www.timeapi.io/api/Time/current/zone?timeZone=UTC", "parse_timeapi"),
+    # AISENSE API - returns {"datetime": "2025-10-30T01:23:45Z", ...}
+    ("https://aisense.no/api/v1/datetime", "parse_aisense"),
+    # OpenTimezone API - returns {"datetime": "2025-10-30T01:23:45Z", ...}
+    ("https://api.opentimezone.com/current?timezone=UTC", "parse_opentimezone"),
+]
 
 # Network connection state
 WIFI_TIMEOUT = 60
@@ -212,12 +226,67 @@ def wlan_start():
             pass
         return False
 
+def parse_worldtime(data):
+    """Parse WorldTimeAPI response format"""
+    time_data = json.loads(data)
+    datetime_str = time_data.get("datetime", "")
+    if not datetime_str or "T" not in datetime_str:
+        return None
+    date_part = datetime_str.split("T")[0]
+    parts = date_part.split("-")
+    if len(parts) != 3:
+        return None
+    year, month, day = parts
+    return (int(year), int(month), int(day))
+
+def parse_timeapi(data):
+    """Parse TimeAPI.io response format"""
+    time_data = json.loads(data)
+    year = time_data.get("year")
+    month = time_data.get("month")
+    day = time_data.get("day")
+    if year and month and day:
+        return (int(year), int(month), int(day))
+    return None
+
+def parse_aisense(data):
+    """Parse AISENSE API response format"""
+    time_data = json.loads(data)
+    datetime_str = time_data.get("datetime", "")
+    if not datetime_str or "T" not in datetime_str:
+        return None
+    # Format: "2025-10-30T01:23:45Z"
+    date_part = datetime_str.split("T")[0]
+    parts = date_part.split("-")
+    if len(parts) != 3:
+        return None
+    year, month, day = parts
+    return (int(year), int(month), int(day))
+
+def parse_opentimezone(data):
+    """Parse OpenTimezone API response format"""
+    time_data = json.loads(data)
+    datetime_str = time_data.get("datetime", "")
+    if not datetime_str or "T" not in datetime_str:
+        return None
+    # Try alternate field names
+    if not datetime_str:
+        datetime_str = time_data.get("current_datetime", "")
+    if not datetime_str or "T" not in datetime_str:
+        return None
+    date_part = datetime_str.split("T")[0]
+    parts = date_part.split("-")
+    if len(parts) != 3:
+        return None
+    year, month, day = parts
+    return (int(year), int(month), int(day))
+
 def fetch_current_date():
     """
-    Fetch current date from worldtimeapi.org
-    Returns (year, month, day) tuple or None if fetch fails
+    Fetch current date from multiple time APIs with fallback support
+    Returns (year, month, day) tuple or None if all fetch attempts fail
     """
-    global _cached_time, _last_fetch_attempt, _fetch_success, _last_error_type
+    global _cached_time, _last_fetch_attempt, _fetch_success, _last_error_type, _current_api_index
     
     if not NETWORK_AVAILABLE:
         debug_log("fetch_current_date: network not available")
@@ -245,60 +314,55 @@ def fetch_current_date():
     
     # Update last fetch attempt timestamp before trying
     _last_fetch_attempt = current_ticks
-    debug_log("Fetching date from worldtimeapi.org...")
     
-    # Attempt to fetch current date from the API
-    try:
-        # Use worldtimeapi.org - a free API that doesn't require authentication
-        # Reduced timeout to 3 seconds to keep badge responsive
-        response = urlopen("https://worldtimeapi.org/api/timezone/Etc/UTC", timeout=3)
+    # Try APIs in round-robin fashion for better load distribution
+    num_apis = len(TIME_APIS)
+    for attempt in range(num_apis):
+        api_index = (_current_api_index + attempt) % num_apis
+        url, parser_name = TIME_APIS[api_index]
+        
+        debug_log(f"Trying API {api_index+1}/{num_apis}: {url[:40]}...")
+        
         try:
-            data = response.read()
-            debug_log(f"Received {len(data)} bytes from API")
-            time_data = json.loads(data)
-            # datetime format: "2025-10-30T01:23:45.123456+00:00"
-            datetime_str = time_data.get("datetime", "")
-            debug_log(f"API datetime: '{datetime_str}'")
-            
-            if datetime_str:
-                # Parse the date part (YYYY-MM-DD) with validation
-                try:
-                    if "T" not in datetime_str:
-                        raise ValueError("datetime string missing 'T' separator")
-                    date_part = datetime_str.split("T")[0]
-                    parts = date_part.split("-")
-                    if len(parts) != 3:
-                        raise ValueError("date part does not have three components")
-                    year, month, day = parts
-                    _cached_time = (int(year), int(month), int(day))
+            # Reduced timeout to 3 seconds to keep badge responsive
+            response = urlopen(url, timeout=3)
+            try:
+                data = response.read()
+                debug_log(f"Received {len(data)} bytes from API {api_index+1}")
+                
+                # Get the appropriate parser function
+                parser = globals().get(parser_name)
+                if not parser:
+                    debug_log(f"Parser {parser_name} not found")
+                    continue
+                
+                # Parse the response
+                result = parser(data)
+                if result:
+                    year, month, day = result
+                    _cached_time = result
                     _fetch_success = True
                     _last_error_type = None
-                    debug_log(f"Successfully parsed date: {year}-{month}-{day}")
+                    # Move to next API for next fetch to distribute load
+                    _current_api_index = (api_index + 1) % num_apis
+                    debug_log(f"Successfully parsed date from API {api_index+1}: {year}-{month}-{day}")
                     return _cached_time
-                except (ValueError, TypeError) as parse_err:
-                    debug_log(f"Parse error: {parse_err}")
-                    _fetch_success = False
-                    _last_error_type = "parse_error"
-            else:
-                debug_log("API response missing datetime field")
-                _fetch_success = False
-                _last_error_type = "no_datetime"
-        finally:
-            response.close()
-    except Exception as e:
-        # Network request failed, will retry on next attempt
-        error_name = type(e).__name__
-        debug_log(f"API call failed: {error_name}: {e}")
-        _fetch_success = False
-        # Map common error types to short codes for display
-        if "timeout" in error_name.lower() or "timeout" in str(e).lower():
-            _last_error_type = "timeout"
-        elif error_name == "OSError":
-            _last_error_type = "network_err"
-        elif "DNS" in str(e) or "getaddrinfo" in str(e):
-            _last_error_type = "dns_fail"
-        else:
-            _last_error_type = error_name[:MAX_ERROR_TYPE_LENGTH]
+                else:
+                    debug_log(f"API {api_index+1} parser returned None")
+            finally:
+                response.close()
+        except Exception as e:
+            # This API failed, try the next one
+            error_name = type(e).__name__
+            debug_log(f"API {api_index+1} failed: {error_name}: {e}")
+            # Continue to next API
+    
+    # All APIs failed
+    debug_log("All time APIs failed")
+    _fetch_success = False
+    _last_error_type = "all_failed"
+    # Move to next API for next attempt
+    _current_api_index = (_current_api_index + 1) % num_apis
     
     return None
 

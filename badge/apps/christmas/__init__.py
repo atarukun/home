@@ -65,7 +65,7 @@ BASE_DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 # Cache for fetched time data
 _cached_time = None
 _last_fetch_attempt = 0
-FETCH_INTERVAL = 3600000  # Try to fetch once per hour (in milliseconds)
+FETCH_INTERVAL = 60 * 60 * 1000  # Try to fetch once per hour (in milliseconds)
 
 def fetch_current_date():
     """
@@ -86,20 +86,21 @@ def fetch_current_date():
     
     try:
         # Use worldtimeapi.org - a free API that doesn't require authentication
-        response = urlopen("http://worldtimeapi.org/api/timezone/Etc/UTC", timeout=5)
-        data = response.read()
-        response.close()
-        
-        time_data = json.loads(data)
-        # datetime format: "2025-10-30T01:23:45.123456+00:00"
-        datetime_str = time_data.get("datetime", "")
-        
-        if datetime_str:
-            # Parse the date part (YYYY-MM-DD)
-            date_part = datetime_str.split("T")[0]
-            year, month, day = date_part.split("-")
-            _cached_time = (int(year), int(month), int(day))
-            return _cached_time
+        response = urlopen("https://worldtimeapi.org/api/timezone/Etc/UTC", timeout=5)
+        try:
+            data = response.read()
+            time_data = json.loads(data)
+            # datetime format: "2025-10-30T01:23:45.123456+00:00"
+            datetime_str = time_data.get("datetime", "")
+            
+            if datetime_str:
+                # Parse the date part (YYYY-MM-DD)
+                date_part = datetime_str.split("T")[0]
+                year, month, day = date_part.split("-")
+                _cached_time = (int(year), int(month), int(day))
+                return _cached_time
+        finally:
+            response.close()
     except Exception as e:
         # Network request failed, will fall back to local time
         print(f"Failed to fetch time from internet: {e}")

@@ -88,10 +88,10 @@ def get_days_until_christmas():
     else:
         # Christmas next year
         days_left_this_year = sum(current_days_in_month) - current_day_of_year
-        # Calculate days until Christmas in next year
+        # Calculate days from Jan 1 to Christmas in next year
         next_year_days = get_days_in_month(christmas_year)
-        days_until_christmas_next_year = sum(next_year_days[:11]) + 25
-        days_left = days_left_this_year + days_until_christmas_next_year
+        days_jan1_to_christmas = sum(next_year_days[:11]) + 25  # Jan 1 to Dec 25
+        days_left = days_left_this_year + days_jan1_to_christmas
     
     return max(0, days_left)
 

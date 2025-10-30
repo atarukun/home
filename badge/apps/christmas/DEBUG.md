@@ -52,7 +52,7 @@ While debugging, the screen shows:
 
 **When connected but no date:**
 - "fetching date..." - Currently attempting to fetch from API
-- "retry in Xs" - Waiting to retry after failure (countdown)
+- "{error_type} (Xs)" - Shows error type with retry countdown (e.g., "timeout (3s)", "dns_fail (2s)")
 - "log: /christmas_debug.log" - Shows where debug info is saved
 
 **When working:**

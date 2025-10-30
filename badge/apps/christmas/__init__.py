@@ -75,6 +75,7 @@ _fetch_success = False
 _last_error_type = None  # Track last error for on-screen display
 FETCH_INTERVAL = 60 * 60 * 1000  # Try to fetch once per hour (in milliseconds) when successful
 RETRY_INTERVAL = 5 * 1000  # Retry every 5 seconds (in milliseconds) when failed
+MAX_ERROR_TYPE_LENGTH = 10  # Maximum characters to display for error type
 
 # Network connection state
 WIFI_TIMEOUT = 60
@@ -292,12 +293,12 @@ def fetch_current_date():
         # Map common error types to short codes for display
         if "timeout" in error_name.lower() or "timeout" in str(e).lower():
             _last_error_type = "timeout"
-        elif "OSError" in error_name:
+        elif error_name == "OSError":
             _last_error_type = "network_err"
         elif "DNS" in str(e) or "getaddrinfo" in str(e):
             _last_error_type = "dns_fail"
         else:
-            _last_error_type = error_name[:10]  # Truncate to 10 chars
+            _last_error_type = error_name[:MAX_ERROR_TYPE_LENGTH]
     
     return None
 

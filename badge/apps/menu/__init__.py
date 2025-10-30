@@ -33,11 +33,10 @@ def format_current_date():
     
     # Only update if day has changed or cache is empty
     if _cached_date is None or _cached_day != current_day:
-        day = now[2]
         month = now[1]
         year = now[0]
         month_name = MONTH_NAMES[month - 1]
-        _cached_date = f"{day:02d} {month_name} {year}"
+        _cached_date = f"{current_day:02d} {month_name} {year}"
         _cached_day = current_day
     
     return _cached_date

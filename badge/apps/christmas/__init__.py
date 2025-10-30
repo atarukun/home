@@ -95,7 +95,7 @@ def fetch_current_date():
         return _cached_time
     
     # Mark that we're attempting to fetch
-    if _connection_state == CONNECTION_STATE_IDLE:
+    if _connection_state != CONNECTION_STATE_FETCHING:
         _connection_state = CONNECTION_STATE_FETCHING
         _fetch_start_time = current_ticks
     

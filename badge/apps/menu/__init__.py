@@ -154,11 +154,11 @@ def update():
         screen.brush = brushes.color(211, 250, 55, 150)
         screen.text(page_label, 160 - w - 5, 112)
     
-    # draw current date at the bottom
+    # draw current date at the very bottom
     date_label = format_current_date()
     w, _ = screen.measure_text(date_label)
-    screen.brush = brushes.color(211, 250, 55, 150)
-    screen.text(date_label, 80 - (w / 2), 112)
+    screen.brush = ui.phosphor
+    screen.text(date_label, 3, 114)
 
     if alpha <= MAX_ALPHA:
         screen.brush = brushes.color(0, 0, 0, 255 - alpha)

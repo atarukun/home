@@ -94,8 +94,8 @@ def fetch_current_date():
     if _cached_time and (current_ticks - _last_fetch_attempt < FETCH_INTERVAL):
         return _cached_time
     
-    # Mark that we're attempting to fetch
-    if _connection_state != CONNECTION_STATE_FETCHING:
+    # Mark that we're attempting to fetch (only transition to FETCHING once)
+    if _connection_state == CONNECTION_STATE_IDLE or _connection_state == CONNECTION_STATE_SUCCESS or _connection_state == CONNECTION_STATE_FAILED:
         _connection_state = CONNECTION_STATE_FETCHING
         _fetch_start_time = current_ticks
     

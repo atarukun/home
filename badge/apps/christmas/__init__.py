@@ -91,12 +91,12 @@ def fetch_current_date():
     # Check if we should retry (use shorter interval when failed)
     if not _fetch_success and _last_fetch_attempt > 0:
         if current_ticks - _last_fetch_attempt < RETRY_INTERVAL:
-            return _cached_time  # Return None if never succeeded
+            return None  # Return None to indicate we're still waiting to retry
     
     # Update last fetch attempt timestamp before trying
     _last_fetch_attempt = current_ticks
     
-    # Only update last fetch attempt on an actual attempt (not when returning cached value)
+    # Attempt to fetch current date from the API
     try:
         # Use worldtimeapi.org - a free API that doesn't require authentication
         # Reduced timeout to 3 seconds to keep badge responsive

@@ -59,33 +59,36 @@ def get_days_until_christmas():
     current_month = now[1]
     current_day = now[2]
     
-    # Days in each month
-    days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-    
-    # Check if leap year
-    is_leap = (current_year % 4 == 0 and current_year % 100 != 0) or (current_year % 400 == 0)
-    if is_leap:
-        days_in_month[1] = 29
-    
     # Determine which Christmas to count down to
     christmas_year = current_year
     if current_month == 12 and current_day > 25:
         # After Christmas, count to next year
         christmas_year += 1
     
+    # Helper function to get days in month for a specific year
+    def get_days_in_month(year):
+        days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+        is_leap = (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0)
+        if is_leap:
+            days[1] = 29
+        return days
+    
     # Calculate day of year for current date
-    current_day_of_year = sum(days_in_month[:current_month-1]) + current_day
+    current_days_in_month = get_days_in_month(current_year)
+    current_day_of_year = sum(current_days_in_month[:current_month-1]) + current_day
     
     # Calculate day of year for Christmas
     if christmas_year == current_year:
         # Christmas this year
-        christmas_day_of_year = sum(days_in_month[:11]) + 25  # December 25
+        christmas_day_of_year = sum(current_days_in_month[:11]) + 25  # December 25
         days_left = christmas_day_of_year - current_day_of_year
     else:
         # Christmas next year
-        days_left_this_year = sum(days_in_month) - current_day_of_year
-        # For next year's Christmas (approximate, could be leap year)
-        days_left = days_left_this_year + sum(days_in_month[:11]) + 25
+        days_left_this_year = sum(current_days_in_month) - current_day_of_year
+        # Calculate days until Christmas in next year
+        next_year_days = get_days_in_month(christmas_year)
+        days_until_christmas_next_year = sum(next_year_days[:11]) + 25
+        days_left = days_left_this_year + days_until_christmas_next_year
     
     return max(0, days_left)
 

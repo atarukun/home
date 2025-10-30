@@ -67,20 +67,37 @@ _cached_time = None
 _last_fetch_attempt = 0
 FETCH_INTERVAL = 60 * 60 * 1000  # Try to fetch once per hour (in milliseconds)
 
+# Connection state tracking
+CONNECTION_STATE_IDLE = 0
+CONNECTION_STATE_FETCHING = 1
+CONNECTION_STATE_SUCCESS = 2
+CONNECTION_STATE_FAILED = 3
+
+_connection_state = CONNECTION_STATE_IDLE
+_fetch_start_time = 0
+FETCH_TIMEOUT = 10000  # 10 seconds timeout for showing "fetching" message
+
 def fetch_current_date():
     """
     Fetch current date from worldtimeapi.org
     Returns (year, month, day) tuple or None if fetch fails
+    Updates connection state for user feedback
     """
-    global _cached_time, _last_fetch_attempt
+    global _cached_time, _last_fetch_attempt, _connection_state, _fetch_start_time
     
     if not NETWORK_AVAILABLE:
+        _connection_state = CONNECTION_STATE_FAILED
         return None
     
     # Return cached time if still valid
     current_ticks = io.ticks
     if _cached_time and (current_ticks - _last_fetch_attempt < FETCH_INTERVAL):
         return _cached_time
+    
+    # Mark that we're attempting to fetch (only transition to FETCHING once)
+    if _connection_state == CONNECTION_STATE_IDLE or _connection_state == CONNECTION_STATE_SUCCESS or _connection_state == CONNECTION_STATE_FAILED:
+        _connection_state = CONNECTION_STATE_FETCHING
+        _fetch_start_time = current_ticks
     
     # Only update last fetch attempt on an actual attempt (not when returning cached value)
     try:
@@ -106,31 +123,35 @@ def fetch_current_date():
                     _cached_time = (int(year), int(month), int(day))
                     # Only update last fetch attempt after successful parse
                     _last_fetch_attempt = current_ticks
+                    _connection_state = CONNECTION_STATE_SUCCESS
                     return _cached_time
                 except (ValueError, TypeError) as parse_err:
                     print(f"Failed to parse date from API response: {parse_err}")
+                    _connection_state = CONNECTION_STATE_FAILED
         finally:
             response.close()
     except Exception as e:
-        # Network request failed, will fall back to local time
+        # Network request failed
         print(f"Failed to fetch time from internet: {e}")
+        _connection_state = CONNECTION_STATE_FAILED
     
     return None
 
 def get_days_until_christmas():
-    """Calculate days until next Christmas (Dec 25)"""
+    """
+    Calculate days until next Christmas (Dec 25)
+    Returns tuple: (days, has_valid_date)
+    """
     # Try to fetch current date from internet
     fetched_date = fetch_current_date()
     
     if fetched_date:
         # Use internet time
         current_year, current_month, current_day = fetched_date
+        has_valid_date = True
     else:
-        # Fall back to local time
-        now = time.localtime()
-        current_year = now[0]
-        current_month = now[1]
-        current_day = now[2]
+        # No valid date available - don't use local time as it may be wrong
+        return (0, False)
     
     # Determine which Christmas to count down to
     christmas_year = current_year
@@ -163,9 +184,11 @@ def get_days_until_christmas():
         days_jan1_to_christmas = sum(next_year_days[:11]) + 25  # Jan 1 to Dec 25
         days_left = days_left_this_year + days_jan1_to_christmas
     
-    return max(0, days_left)
+    return (max(0, days_left), has_valid_date)
 
 def update():
+    global _connection_state, _fetch_start_time
+    
     # Clear screen with dark blue background
     screen.brush = BG_BRUSH
     screen.clear()
@@ -175,27 +198,70 @@ def update():
         snowflake.update()
         snowflake.draw()
     
-    # Calculate days until Christmas
-    days = get_days_until_christmas()
+    # Check connection state and display appropriate message
+    current_ticks = io.ticks
     
-    # Draw countdown
-    screen.font = large_font
-    screen.brush = TEXT_BRUSH
-    
-    # Main number (at top)
-    days_text = str(days)
-    w, h = screen.measure_text(days_text)
-    screen.text(days_text, 80 - (w // 2), 30)
-    
-    # Labels
-    screen.font = small_font
-    label = "days until"
-    w, _ = screen.measure_text(label)
-    screen.text(label, 80 - (w // 2), 60)
-    
-    label2 = "Christmas"
-    w, _ = screen.measure_text(label2)
-    screen.text(label2, 80 - (w // 2), 75)
+    if _connection_state == CONNECTION_STATE_FETCHING:
+        # Show fetching message
+        screen.font = small_font
+        screen.brush = TEXT_BRUSH
+        
+        message = "Fetching date..."
+        w, _ = screen.measure_text(message)
+        screen.text(message, 80 - (w // 2), 50)
+        
+        # Check if we've been fetching for too long
+        if current_ticks - _fetch_start_time > FETCH_TIMEOUT:
+            _connection_state = CONNECTION_STATE_FAILED
+            
+    elif _connection_state == CONNECTION_STATE_FAILED:
+        # Show error message
+        screen.font = small_font
+        screen.brush = TEXT_BRUSH
+        
+        message1 = "Unable to sync"
+        w, _ = screen.measure_text(message1)
+        screen.text(message1, 80 - (w // 2), 45)
+        
+        message2 = "time from"
+        w, _ = screen.measure_text(message2)
+        screen.text(message2, 80 - (w // 2), 60)
+        
+        message3 = "internet"
+        w, _ = screen.measure_text(message3)
+        screen.text(message3, 80 - (w // 2), 75)
+        
+    else:
+        # Calculate days until Christmas
+        days, has_valid_date = get_days_until_christmas()
+        
+        if has_valid_date:
+            # Draw countdown
+            screen.font = large_font
+            screen.brush = TEXT_BRUSH
+            
+            # Main number (at top)
+            days_text = str(days)
+            w, h = screen.measure_text(days_text)
+            screen.text(days_text, 80 - (w // 2), 30)
+            
+            # Labels
+            screen.font = small_font
+            label = "days until"
+            w, _ = screen.measure_text(label)
+            screen.text(label, 80 - (w // 2), 60)
+            
+            label2 = "Christmas"
+            w, _ = screen.measure_text(label2)
+            screen.text(label2, 80 - (w // 2), 75)
+        else:
+            # No valid date yet, show fetching or error state
+            # This shouldn't happen as we check state above, but just in case
+            screen.font = small_font
+            screen.brush = TEXT_BRUSH
+            message = "Checking..."
+            w, _ = screen.measure_text(message)
+            screen.text(message, 80 - (w // 2), 50)
 
 if __name__ == "__main__":
     run(update)

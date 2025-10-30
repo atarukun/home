@@ -241,9 +241,9 @@ def update():
         w, _ = screen.measure_text(message)
         screen.text(message, 80 - (w // 2), 55)
     
-    # Display today's date at the bottom
+    # Display today's date at the bottom (only if we have a real date, not "thinking...")
     date_string = get_current_date_string()
-    if date_string:
+    if date_string and date_string != "thinking...":
         screen.font = small_font
         w, _ = screen.measure_text(date_string)
         screen.text(date_string, 80 - (w // 2), 105)

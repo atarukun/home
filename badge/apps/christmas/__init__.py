@@ -72,6 +72,7 @@ MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
 _cached_time = None
 _last_fetch_attempt = 0
 _fetch_success = False
+_last_error_type = None  # Track last error for on-screen display
 FETCH_INTERVAL = 60 * 60 * 1000  # Try to fetch once per hour (in milliseconds) when successful
 RETRY_INTERVAL = 5 * 1000  # Retry every 5 seconds (in milliseconds) when failed
 
@@ -215,14 +216,16 @@ def fetch_current_date():
     Fetch current date from worldtimeapi.org
     Returns (year, month, day) tuple or None if fetch fails
     """
-    global _cached_time, _last_fetch_attempt, _fetch_success
+    global _cached_time, _last_fetch_attempt, _fetch_success, _last_error_type
     
     if not NETWORK_AVAILABLE:
         debug_log("fetch_current_date: network not available")
+        _last_error_type = "no_network"
         return None
     
     if not connected:
         debug_log("fetch_current_date: not connected to WiFi")
+        _last_error_type = "no_wifi"
         return None
     
     # Return cached time if still valid
@@ -268,20 +271,33 @@ def fetch_current_date():
                     year, month, day = parts
                     _cached_time = (int(year), int(month), int(day))
                     _fetch_success = True
+                    _last_error_type = None
                     debug_log(f"Successfully parsed date: {year}-{month}-{day}")
                     return _cached_time
                 except (ValueError, TypeError) as parse_err:
                     debug_log(f"Parse error: {parse_err}")
                     _fetch_success = False
+                    _last_error_type = "parse_error"
             else:
                 debug_log("API response missing datetime field")
                 _fetch_success = False
+                _last_error_type = "no_datetime"
         finally:
             response.close()
     except Exception as e:
         # Network request failed, will retry on next attempt
-        debug_log(f"API call failed: {type(e).__name__}: {e}")
+        error_name = type(e).__name__
+        debug_log(f"API call failed: {error_name}: {e}")
         _fetch_success = False
+        # Map common error types to short codes for display
+        if "timeout" in error_name.lower() or "timeout" in str(e).lower():
+            _last_error_type = "timeout"
+        elif "OSError" in error_name:
+            _last_error_type = "network_err"
+        elif "DNS" in str(e) or "getaddrinfo" in str(e):
+            _last_error_type = "dns_fail"
+        else:
+            _last_error_type = error_name[:10]  # Truncate to 10 chars
     
     return None
 
@@ -413,11 +429,14 @@ def update():
             if _last_fetch_attempt == 0:
                 message = "fetching date..."
             elif not _fetch_success:
-                # Show retry countdown
+                # Show retry countdown or error
                 wait_time = (io.ticks - _last_fetch_attempt) / 1000.0
                 if wait_time < RETRY_INTERVAL / 1000.0:
                     retry_in = int((RETRY_INTERVAL / 1000.0) - wait_time)
-                    message = f"retry in {retry_in}s"
+                    if _last_error_type:
+                        message = f"{_last_error_type} ({retry_in}s)"
+                    else:
+                        message = f"retry in {retry_in}s"
                 else:
                     message = "fetching date..."
             else:

@@ -145,7 +145,7 @@ def get_current_date_string():
     try:
         now = time.localtime()
         return format_date(now[0], now[1], now[2])
-    except:
+    except Exception:
         return None
 
 def get_days_until_christmas():

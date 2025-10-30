@@ -176,6 +176,7 @@ def wlan_start():
         try:
             print("wlan_start error:", e)
         except Exception:
+            # Ignore errors in error reporting to avoid crashing the UI
             pass
         return False
 

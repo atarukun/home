@@ -35,7 +35,11 @@ The log contains timestamped entries (seconds since boot) including:
 - Any connection errors
 
 **Date Fetching:**
-- API call attempts to multiple time services (WorldTimeAPI, TimeAPI.io, AISENSE, OpenTimezone)
+- API call attempts to multiple time services:
+  - WorldTimeAPI (worldtimeapi.org)
+  - TimeAPI.io (timeapi.io)
+  - AISENSE (aisense.no)
+  - OpenTimezone (opentimezone.com)
 - Which API is being tried (e.g., "Trying API 1/4")
 - Response data received (size in bytes)
 - Datetime strings from API
@@ -75,7 +79,7 @@ While debugging, the screen shows:
 
 3. **API call failures**
    - The app tries multiple time APIs automatically (4 different services)
-   - If all APIs fail, will show "all_failed" error
+   - If all APIs fail, will show `all_failed` error
    - Check for network connectivity issues
    - Look for timeout errors (3 second timeout per API)
    - Check for DNS resolution problems

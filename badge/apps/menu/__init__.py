@@ -14,20 +14,33 @@ mona = SpriteSheet("/system/assets/mona-sprites/mona-default.png", 11, 1)
 screen.font = PixelFont.load("/system/assets/fonts/ark.ppf")
 # screen.antialias = Image.X2
 
-# Month names for date formatting
+# Month names for date formatting (short form)
 MONTH_NAMES = [
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December"
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 ]
 
+# Cached date to avoid calling time.localtime() every frame
+_cached_date = None
+_cached_day = None
+
 def format_current_date():
-    """Format current date as 'DD Month YYYY'"""
+    """Format current date as 'DD Mon YYYY' (cached, updates once per day)"""
+    global _cached_date, _cached_day
+    
     now = time.localtime()
-    day = now[2]
-    month = now[1]
-    year = now[0]
-    month_name = MONTH_NAMES[month - 1]
-    return f"{day:02d} {month_name} {year}"
+    current_day = now[2]
+    
+    # Only update if day has changed or cache is empty
+    if _cached_date is None or _cached_day != current_day:
+        day = now[2]
+        month = now[1]
+        year = now[0]
+        month_name = MONTH_NAMES[month - 1]
+        _cached_date = f"{day:02d} {month_name} {year}"
+        _cached_day = current_day
+    
+    return _cached_date
 
 # Auto-discover apps with __init__.py
 apps = []

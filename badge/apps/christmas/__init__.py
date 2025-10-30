@@ -83,6 +83,19 @@ wlan = None
 connected = False
 ticks_start = None
 
+# Debug logging
+DEBUG_LOG_FILE = "/christmas_debug.log"
+def debug_log(message):
+    """Log debug messages to a file for later inspection"""
+    try:
+        import time
+        timestamp = io.ticks / 1000.0  # seconds since boot
+        with open(DEBUG_LOG_FILE, "a") as f:
+            f.write(f"[{timestamp:8.1f}s] {message}\n")
+    except Exception:
+        # Silently fail if logging doesn't work
+        pass
+
 def get_connection_details():
     """Get WiFi credentials from secrets.py"""
     global WIFI_PASSWORD, WIFI_SSID
@@ -108,24 +121,24 @@ def wlan_start():
     global wlan, ticks_start, connected, WIFI_PASSWORD, WIFI_SSID
 
     if not NETWORK_AVAILABLE:
-        print("DEBUG: Network not available")
+        debug_log("Network not available")
         return False
 
     if ticks_start is None:
         ticks_start = io.ticks
-        print(f"DEBUG: Starting WiFi connection process at tick {ticks_start}")
+        debug_log(f"Starting WiFi connection for SSID '{WIFI_SSID}'")
 
     if connected:
         return True
 
     if wlan is None:
-        print(f"DEBUG: Initializing WLAN for SSID '{WIFI_SSID}'")
+        debug_log(f"Initializing WLAN interface")
         wlan = network.WLAN(network.STA_IF)
         wlan.active(True)
 
         if wlan.isconnected():
             connected = True
-            print("DEBUG: Already connected to WiFi")
+            debug_log("Already connected to WiFi")
             return True
 
     # attempt to find the SSID by scanning; some APs may be hidden intermittently
@@ -133,9 +146,9 @@ def wlan_start():
         ssid_found = False
         try:
             scans = wlan.scan()
-            print(f"DEBUG: Found {len(scans)} WiFi networks")
+            debug_log(f"Scanned {len(scans)} WiFi networks")
         except Exception as scan_err:
-            print(f"DEBUG: Scan failed: {scan_err}")
+            debug_log(f"Scan failed: {scan_err}")
             scans = []
 
         for s in scans:
@@ -148,28 +161,28 @@ def wlan_start():
                     ss = str(ss)
             if ss == WIFI_SSID:
                 ssid_found = True
-                print(f"DEBUG: Target SSID '{WIFI_SSID}' found in scan")
+                debug_log(f"Found target SSID '{WIFI_SSID}'")
                 break
 
         if not ssid_found:
             elapsed = (io.ticks - ticks_start) / 1000.0
-            print(f"DEBUG: SSID '{WIFI_SSID}' not found after {elapsed:.1f}s")
+            debug_log(f"SSID not found (elapsed: {elapsed:.1f}s)")
             # not found yet; if still within timeout, keep trying on subsequent calls
             if io.ticks - ticks_start < WIFI_TIMEOUT * 1000:
                 # return True to indicate we're still attempting to connect (in-progress)
                 return True
             else:
                 # timed out
-                print(f"DEBUG: WiFi scan timeout after {WIFI_TIMEOUT}s")
+                debug_log(f"WiFi scan timeout ({WIFI_TIMEOUT}s)")
                 return False
 
         # SSID is visible; attempt to connect (or re-attempt)
         try:
             if not wlan.isconnected():
-                print(f"DEBUG: Attempting to connect to '{WIFI_SSID}'")
+                debug_log(f"Connecting to '{WIFI_SSID}'")
                 wlan.connect(WIFI_SSID, WIFI_PASSWORD)
         except Exception as conn_err:
-            print(f"DEBUG: Connection attempt failed: {conn_err}")
+            debug_log(f"Connect failed: {conn_err}")
             # connection initiation failed; we'll retry while still within timeout
             if io.ticks - ticks_start < WIFI_TIMEOUT * 1000:
                 return True
@@ -180,18 +193,18 @@ def wlan_start():
 
         # if connected, return True; otherwise indicate in-progress until timeout
         if connected:
-            print("DEBUG: Successfully connected to WiFi!")
+            debug_log("WiFi connected!")
             return True
         if io.ticks - ticks_start < WIFI_TIMEOUT * 1000:
             elapsed = (io.ticks - ticks_start) / 1000.0
-            print(f"DEBUG: Still connecting... ({elapsed:.1f}s elapsed)")
+            debug_log(f"Connecting... ({elapsed:.1f}s)")
             return True
-        print(f"DEBUG: Connection timeout after {WIFI_TIMEOUT}s")
+        debug_log(f"Connection timeout ({WIFI_TIMEOUT}s)")
         return False
     except Exception as e:
         # on unexpected errors, don't crash the UI; report and return False
         try:
-            print("DEBUG: wlan_start error:", e)
+            debug_log(f"wlan_start error: {e}")
         except Exception:
             # Ignore errors in error reporting to avoid crashing the UI
             pass
@@ -205,30 +218,30 @@ def fetch_current_date():
     global _cached_time, _last_fetch_attempt, _fetch_success
     
     if not NETWORK_AVAILABLE:
-        print("DEBUG: fetch_current_date - network not available")
+        debug_log("fetch_current_date: network not available")
         return None
     
     if not connected:
-        print("DEBUG: fetch_current_date - not connected to WiFi")
+        debug_log("fetch_current_date: not connected to WiFi")
         return None
     
     # Return cached time if still valid
     current_ticks = io.ticks
     if _cached_time and _fetch_success and (current_ticks - _last_fetch_attempt < FETCH_INTERVAL):
         elapsed = (current_ticks - _last_fetch_attempt) / 1000.0
-        print(f"DEBUG: Using cached date (cached {elapsed:.1f}s ago)")
+        debug_log(f"Using cached date (age: {elapsed:.1f}s)")
         return _cached_time
     
     # Check if we should retry (use shorter interval when failed)
     if not _fetch_success and _last_fetch_attempt > 0:
         wait_time = (current_ticks - _last_fetch_attempt) / 1000.0
         if current_ticks - _last_fetch_attempt < RETRY_INTERVAL:
-            print(f"DEBUG: Waiting to retry API call ({wait_time:.1f}s / {RETRY_INTERVAL/1000.0}s)")
+            debug_log(f"Waiting to retry ({wait_time:.1f}s / {RETRY_INTERVAL/1000.0}s)")
             return None  # Return None to indicate we're still waiting to retry
     
     # Update last fetch attempt timestamp before trying
     _last_fetch_attempt = current_ticks
-    print("DEBUG: Attempting to fetch date from worldtimeapi.org...")
+    debug_log("Fetching date from worldtimeapi.org...")
     
     # Attempt to fetch current date from the API
     try:
@@ -237,11 +250,11 @@ def fetch_current_date():
         response = urlopen("https://worldtimeapi.org/api/timezone/Etc/UTC", timeout=3)
         try:
             data = response.read()
-            print(f"DEBUG: Received {len(data)} bytes from API")
+            debug_log(f"Received {len(data)} bytes from API")
             time_data = json.loads(data)
             # datetime format: "2025-10-30T01:23:45.123456+00:00"
             datetime_str = time_data.get("datetime", "")
-            print(f"DEBUG: API datetime string: '{datetime_str}'")
+            debug_log(f"API datetime: '{datetime_str}'")
             
             if datetime_str:
                 # Parse the date part (YYYY-MM-DD) with validation
@@ -255,19 +268,19 @@ def fetch_current_date():
                     year, month, day = parts
                     _cached_time = (int(year), int(month), int(day))
                     _fetch_success = True
-                    print(f"DEBUG: Successfully parsed date: {year}-{month}-{day}")
+                    debug_log(f"Successfully parsed date: {year}-{month}-{day}")
                     return _cached_time
                 except (ValueError, TypeError) as parse_err:
-                    print(f"DEBUG: Failed to parse date from API response: {parse_err}")
+                    debug_log(f"Parse error: {parse_err}")
                     _fetch_success = False
             else:
-                print("DEBUG: API response missing datetime field")
+                debug_log("API response missing datetime field")
                 _fetch_success = False
         finally:
             response.close()
     except Exception as e:
         # Network request failed, will retry on next attempt
-        print(f"DEBUG: Failed to fetch time from internet: {type(e).__name__}: {e}")
+        debug_log(f"API call failed: {type(e).__name__}: {e}")
         _fetch_success = False
     
     return None
@@ -411,6 +424,12 @@ def update():
                 message = "thinking..."
         w, _ = screen.measure_text(message)
         screen.text(message, 80 - (w // 2), 55)
+        
+        # Show debug log location at bottom
+        screen.font = small_font
+        debug_msg = f"log: {DEBUG_LOG_FILE}"
+        w, _ = screen.measure_text(debug_msg)
+        screen.text(debug_msg, 80 - (w // 2), 105)
     
     # Display today's date at the bottom (only if we have a real date, not "thinking...")
     date_string = get_current_date_string()
@@ -420,4 +439,12 @@ def update():
         screen.text(date_string, 80 - (w // 2), 105)
 
 if __name__ == "__main__":
+    # Clear previous log and start fresh
+    try:
+        with open(DEBUG_LOG_FILE, "w") as f:
+            f.write("=== Christmas App Debug Log ===\n")
+    except Exception:
+        pass
+    debug_log("App started")
+    debug_log(f"Network available: {NETWORK_AVAILABLE}")
     run(update)

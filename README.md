@@ -13,6 +13,7 @@ These apps are designed to be run on the base MonaOS MicroPython firmware pre-in
   - [Introduction](#introduction)
   - [Getting started](#getting-started)
     - [Creating your own apps](#creating-your-own-apps)
+    - [Testing apps with the simulator](#testing-apps-with-the-simulator)
     - [Editing code on the badge](#editing-code-on-the-badge)
     - [Flashing your Badge](#flashing-your-badge)
     - [Writing to files from application code](#writing-to-files-from-application-code)
@@ -22,6 +23,8 @@ These apps are designed to be run on the base MonaOS MicroPython firmware pre-in
     - [Blitting images and sprites](#blitting-images-and-sprites)
     - [Drawing text](#drawing-text)
   - [Wireless networking and Bluetooth](#wireless-networking-and-bluetooth)
+  - [Built-in Modules](#built-in-modules)
+  - [Contributing](#contributing)
 
 ## Introduction
 
@@ -81,6 +84,36 @@ Your app should implement an `update()` function within `__init__.py` which will
 You'll have to [update the menu app](https://badger.github.io/hack/menu-pagination/) on your device to see your app, the version of the pre-flashed firmware only supports six icons - have fun expanding it!
 
 An app is launched by `main.py`, which handles the intro cinematic, menu and launching your app. It'll call your `init()` and `update()` methods, and call `on_exit()` when you press the `HOME` button to leave your app.
+
+### Testing apps with the simulator
+
+The badge simulator lets you test your apps on your computer before deploying them to the hardware. This is much faster for development and debugging.
+
+**Prerequisites:**
+- Python 3.10 or newer (3.13 recommended)
+- Pygame (`pip install pygame`)
+
+**Basic usage:**
+```bash
+python simulator/badge_simulator.py -C badge badge/apps/your_app/__init__.py
+```
+
+**Controls:**
+- `A` / `Z` → Button A
+- `B` / `X` → Button B  
+- `C` / `Space` → Button C
+- Arrow keys → D-pad
+- `H` / `Esc` → Home / exit
+- `F12` → Take screenshot (when --screenshots is configured)
+
+**Taking screenshots:**
+```bash
+python simulator/badge_simulator.py -C badge --screenshots ./screenshots badge/apps/your_app/__init__.py
+```
+
+Screenshots are saved at native badge resolution (160×120) in PNG format, perfect for documentation and pull requests.
+
+For more details and advanced options, see the [simulator documentation](./simulator/README.md).
 
 ```python
 # example __init__.py for an application
@@ -274,7 +307,7 @@ def update():
 
 ### Drawing text
 
-The `PixelFont` class provides functions for loading pixel fonts, which can then be used to render text onto images. [Click here for full documentation of the `PixelFont` class](PixelFont.md).
+The `PixelFont` class provides functions for loading pixel fonts, which can then be used to render text onto images. [Click here for full documentation of the `PixelFont` class](./badgerware/PixelFont.md).
 
 There are thirty licensed pixel fonts included.
 
@@ -300,5 +333,16 @@ You can use the existing MicroPython functionality for wireless networking and b
 
 - Wireless networking: https://docs.micropython.org/en/latest/rp2/quickref.html#wlan
 - Bluetooth: https://docs.micropython.org/en/latest/library/bluetooth.html#module-bluetooth
+
+## Built-in Modules ##
+The following built in modules are available to the MicroPython code running on the device:
+
+array, binascii, builtins, cmath, collections, errno, gc, hashlib, heapq, io, json, machine, math, micropython, network, os, platform, random, re,select, socket, ssl, struct, sys,time, uctypes, rp2, bluetooth, cryptolib, deflate, framebuf, vfs, lwip, ntptime, mip, badgeware,picovector, pimoroni, pimoroni_i2c, qrcode, st7789, powman, board, boot, datetime, ezwifi, pcf85063a, qwstpad, cppmem, adcfft, aioble, asyncio, uasyncio, requests, urequests, urllib, webrepl, websocket, umqtt, ulab, aye_arr, breakout_as7262, breakout_as7343, breakout_bh1745, breakout_bme280, breakout_bme68x, breakout_bme69x, breakout_bmp280, breakout_dotmatrix, breakout_encoder, breakout_encoder_wheel, breakout_icp10125, breakout_ioexpander, breakout_ltr559, breakout_matrix11x7, breakout_mics6814, breakout_msa301, breakout_paa5100, breakout_pmw3901, breakout_potentiometer, breakout_rgbmatrix5x5, breakout_rtc, breakout_scd41, breakout_sgp30, breakout_trackball, breakout_vl53l5cx
+
+## Contributing
+
+We welcome contributions! If you've created a new app or improved an existing one, please consider submitting a pull request.
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines on how to contribute to this project.
 
 

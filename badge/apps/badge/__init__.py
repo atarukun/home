@@ -28,6 +28,7 @@ DETAILS_URL = "https://api.github.com/users/{user}"
 
 WIFI_PASSWORD = None
 WIFI_SSID = None
+GITHUB_TOKEN = None
 
 wlan = None
 connected = False
@@ -39,19 +40,36 @@ def message(text):
 
 
 def get_connection_details(user):
-    global WIFI_PASSWORD, WIFI_SSID
+    global WIFI_PASSWORD, WIFI_SSID, GITHUB_TOKEN, GITHUB_USERNAME
 
     if WIFI_SSID is not None and user.handle is not None:
         return True
 
     try:
+        # Prefer a local 'secrets.py' placed at the badge repository root ("/badge/secrets.py")
+        # Insert '/' (root of the badge filesystem) at the front of sys.path so a local
+        # `secrets.py` can be imported on the device. Clean up sys.path afterwards.
         sys.path.insert(0, "/")
-        from secrets import WIFI_PASSWORD, WIFI_SSID, GITHUB_USERNAME
-        sys.path.pop(0)
-    except ImportError:
+        try:
+            from secrets import WIFI_PASSWORD, WIFI_SSID, GITHUB_USERNAME, GITHUB_TOKEN
+        finally:
+            # ensure we remove the path we inserted even if import fails
+            try:
+                sys.path.pop(0)
+            except Exception:
+                pass
+    except ImportError as e:
+        # If the user hasn't created a secrets.py file, fall back to None so
+        # the rest of the app can detect missing credentials and show helpful UI.
         WIFI_PASSWORD = None
         WIFI_SSID = None
         GITHUB_USERNAME = None
+        GITHUB_TOKEN = None
+    except Exception as e:
+        WIFI_PASSWORD = None
+        WIFI_SSID = None
+        GITHUB_USERNAME = None
+        GITHUB_TOKEN = None
 
     if not WIFI_SSID:
         return False
@@ -76,81 +94,51 @@ def wlan_start():
     if wlan is None:
         wlan = network.WLAN(network.STA_IF)
         wlan.active(True)
-
+        
         if wlan.isconnected():
+            connected = True
             return True
-
-    # attempt to find the SSID by scanning; some APs may be hidden intermittently
-    try:
-        ssid_found = False
-        try:
-            scans = wlan.scan()
-        except Exception:
-            scans = []
-
-        for s in scans:
-            # s[0] is SSID (bytes or str)
-            ss = s[0]
-            if isinstance(ss, (bytes, bytearray)):
-                try:
-                    ss = ss.decode("utf-8", "ignore")
-                except Exception:
-                    ss = str(ss)
-            if ss == WIFI_SSID:
-                ssid_found = True
-                break
-
-        if not ssid_found:
-            # not found yet; if still within timeout, keep trying on subsequent calls
-            if io.ticks - ticks_start < WIFI_TIMEOUT * 1000:
-                # optionally print once every few seconds to avoid spamming
-                if (io.ticks - ticks_start) % 3000 < 50:
-                    print("SSID not visible yet; rescanning...")
-                # return True to indicate we're still attempting to connect (in-progress)
-                return True
-            else:
-                # timed out
-                return False
-
-        # SSID is visible; attempt to connect (or re-attempt)
-        try:
-            wlan.connect(WIFI_SSID, WIFI_PASSWORD)
-        except Exception:
-            # connection initiation failed; we'll retry while still within timeout
-            if io.ticks - ticks_start < WIFI_TIMEOUT * 1000:
-                return True
-            return False
-
+        
+        wlan.connect(WIFI_SSID, WIFI_PASSWORD)
         print("Connecting to WiFi...")
 
-        # update connected state
-        connected = wlan.isconnected()
-
-        # if connected, return True; otherwise indicate in-progress until timeout
+    connected = wlan.isconnected()
+    
+    if io.ticks - ticks_start < WIFI_TIMEOUT * 1000:
         if connected:
+            print("WiFi connected!")
             return True
-        if io.ticks - ticks_start < WIFI_TIMEOUT * 1000:
-            return True
+    elif not connected:
         return False
-    except Exception as e:
-        # on unexpected errors, don't crash the UI; report and return False
-        try:
-            print("wlan_start error:", e)
-        except Exception:
-            pass
-        return False
+    
+    return True
 
-
-def async_fetch_to_disk(url, file, force_update=False):
+def async_fetch_to_disk(url, file, force_update=False, timeout_ms=25000):
+    """
+    Fetch a URL to disk as a generator, yielding between chunks so callers
+    can interleave UI updates. If timeout_ms is provided, abort the fetch
+    after that many milliseconds have elapsed (based on io.ticks).
+    """
     if not force_update and file_exists(file):
         return
+
+    start_ticks = io.ticks
     try:
+        # Prepare headers with authentication if token is available
+        headers = {"User-Agent": "GitHub Universe Badge 2025"}
+        if GITHUB_TOKEN and url.startswith("https://api.github.com"):
+            headers["Authorization"] = f"token {GITHUB_TOKEN}"
+
         # Grab the data
-        response = urlopen(url, headers={"User-Agent": "GitHub Universe Badge 2025"})
+        response = urlopen(url, headers=headers)
         data = bytearray(512)
         total = 0
         with open(file, "wb") as f:
             while True:
+                # enforce timeout if requested
+                if timeout_ms is not None and (io.ticks - start_ticks) > timeout_ms:
+                    raise TimeoutError(f"Fetch timed out after {timeout_ms} ms")
+
                 if (length := response.readinto(data)) == 0:
                     break
                 total += length
@@ -160,41 +148,134 @@ def async_fetch_to_disk(url, file, force_update=False):
         del data
         del response
     except Exception as e:
+        # Clean up a partial file if present
+        try:
+            if file_exists(file):
+                os.remove(file)
+        except Exception:
+            pass
+        # Wrap timeout specifically so callers can react differently if needed
+        if isinstance(e, TimeoutError):
+            raise
         raise RuntimeError(f"Fetch from {url} to {file} failed. {e}") from e
 
 
 def get_user_data(user, force_update=False):
     message(f"Getting user data for {user.handle}...")
-    yield from async_fetch_to_disk(DETAILS_URL.format(user=user.handle), "/user_data.json", force_update)
-    r = json.loads(open("/user_data.json", "r").read())
-    user.name = r["name"]
-    user.handle = r["login"]
-    user.followers = r["followers"]
-    user.repos = r["public_repos"]
-    del r
-    gc.collect()
+    try:
+        yield from async_fetch_to_disk(DETAILS_URL.format(user=user.handle), "/user_data.json", force_update)
+    except Exception as e:
+        # Check if it's a rate limit error
+        error_msg = str(e).lower()
+        if "403" in error_msg or "rate limit" in error_msg:
+            message("Rate limit exceeded")
+            user.name = "Rate Limited"
+            user.handle = user.handle or "Unknown"
+            user.followers = 0
+            user.repos = 0
+            return
+        else:
+            message(f"Failed to get user data: {e}")
+            user.name = "Fetch Error"
+            user.handle = user.handle or "Unknown"
+            user.followers = 0
+            user.repos = 0
+            return
+    
+    try:
+        r = json.loads(open("/user_data.json", "r").read())
+        user.name = r.get("name", user.handle) # Fallback to handle if user does not have a name
+        user.handle = r.get("login", "Unknown Handle")
+        user.followers = r.get("followers", 0)
+        user.repos = r.get("public_repos", 0)
+        del r
+        gc.collect()
+    except Exception as e:
+        message(f"Failed to parse user data: {e}")
+        user.name = "Parse Error"
+        user.followers = 0
+        user.repos = 0
 
 
 def get_contrib_data(user, force_update=False):
     message(f"Getting contribution data for {user.handle}...")
-    yield from async_fetch_to_disk(CONTRIB_URL.format(user=user.handle), "/contrib_data.json", force_update)
-    r = json.loads(open("/contrib_data.json", "r").read())
-    user.contribs = r["total_contributions"]
+    # Attempt the network fetch, but handle any network errors so the UI
+    # doesn't get stuck if the endpoint is unreachable or returns invalid data.
+    try:
+        # 15 second timeout for contribution fetch to avoid blocking forever
+        yield from async_fetch_to_disk(CONTRIB_URL.format(user=user.handle), "/contrib_data.json", force_update, timeout_ms=15000)
+    except TimeoutError as e:
+        message(f"Contrib fetch timed out: {e}")
+        user.contribs = 0
+        user.contribution_data = [[0 for _ in range(53)] for _ in range(7)]
+        return
+    except Exception as e:
+        message(f"Failed to fetch contrib data: {e}")
+        # Provide safe defaults so the rest of the UI can continue.
+        user.contribs = 0
+        user.contribution_data = [[0 for _ in range(53)] for _ in range(7)]
+        return
+
+    try:
+        r = json.loads(open("/contrib_data.json", "r").read())
+    except Exception as e:
+        message(f"Failed to parse contrib JSON: {e}")
+        user.contribs = 0
+        user.contribution_data = [[0 for _ in range(53)] for _ in range(7)]
+        return
+
+    # Safely extract expected fields from the JSON, using defaults if missing.
+    total = r.get("total_contributions")
+    weeks = r.get("weeks") or []
+
+    # Build an empty 7x53 grid and only populate up to available weeks
+    max_weeks = min(len(weeks), 53)
     user.contribution_data = [[0 for _ in range(53)] for _ in range(7)]
-    for w, week in enumerate(r["weeks"]):
-        for day in range(7):
+
+    # Populate grid and compute total if missing or zero
+    computed_total = 0
+    for w in range(max_weeks):
+        week = weeks[w] or {}
+        days = week.get("contribution_days") or []
+        for d in range(min(len(days), 7)):
+            day = days[d] or {}
+            # contribution level (for color) and count (for totals)
+            level = day.get("level", 0)
+            count = day.get("count", 0)
+            # ensure level is a valid index into User.levels
             try:
-                user.contribution_data[day][w] = week["contribution_days"][day]["level"]
-            except IndexError:
-                pass
+                lvl_index = int(level)
+                if lvl_index < 0 or lvl_index >= len(User.levels):
+                    lvl_index = 0
+            except Exception:
+                lvl_index = 0
+            user.contribution_data[d][w] = lvl_index
+            computed_total += int(count)
+
+    if total is None or total == 0:
+        user.contribs = computed_total
+    else:
+        user.contribs = int(total)
     del r
     gc.collect()
 
 
 def get_avatar(user, force_update=False):
     message(f"Getting avatar for {user.handle}...")
-    yield from async_fetch_to_disk(USER_AVATAR.format(user=user.handle), "/avatar.png", force_update)
-    user.avatar = Image.load("/avatar.png")
+    avatar_path = "/avatar.png"
+    try:
+        yield from async_fetch_to_disk(USER_AVATAR.format(user=user.handle), avatar_path, force_update)
+        # Verify file exists before loading
+        if file_exists(avatar_path):
+            user.avatar = Image.load(avatar_path)
+        else:
+            message("Avatar file not found after download")
+            user.avatar = False
+    except Exception as e:
+        message(f"Failed to get avatar: {e}")
+        # Set avatar to False (instead of None) to indicate fetch attempted but failed
+        # This prevents infinite retry while allowing the default avatar to be drawn
+        user.avatar = False
 
 
 def fake_number():
@@ -238,7 +319,8 @@ class User:
         self._force_update = force_update
 
     def draw_stat(self, title, value, x, y):
-        screen.brush = white if value else faded
+        # value may be 0; treat None as missing
+        screen.brush = white if value is not None else faded
         screen.font = large_font
         screen.text(str(value) if value is not None else str(fake_number()), x, y)
         screen.font = small_font
@@ -273,12 +355,15 @@ class User:
         handle = self.handle
 
         # use the handle area to show loading progress if not everything is ready
-        if (not self.handle or not self.avatar or not self.contribs) and connected:
+        # Use explicit None checks so legitimate zero values (e.g. 0 contribs)
+        # don't prevent later tasks (like fetching an avatar) from running.
+        # avatar can be None (not fetched), False (fetch failed), or an Image object
+        if ((self.handle is None) or (self.avatar is None) or (self.contribs is None)) and connected:
             if not self.name:
                 handle = "fetching user data..."
                 if not self._task:
                     self._task = get_user_data(self, self._force_update)
-            elif not self.contribs:
+            elif self.contribs is None:
                 handle = "fetching contribs..."
                 if not self._task:
                     self._task = get_contrib_data(self, self._force_update)
@@ -316,18 +401,23 @@ class User:
 
         # draw avatar imagee
         if not self.avatar:
-            # create a spinning loading animation while we wait for the avatar to load
-            screen.brush = phosphor
-            squircle = shapes.squircle(0, 0, 10, 5)
-            screen.brush = brushes.color(211, 250, 55, 50)
-            for i in range(4):
-                mul = math.sin(io.ticks / 1000) * 14000
-                squircle.transform = Matrix().translate(42, 75).rotate(
-                    (io.ticks + i * mul) / 40).scale(1 + i / 1.3)
-                screen.draw(squircle)
+            drawDefaultAvatar()
         else:
-            screen.blit(self.avatar, 5, 37)
+            try:
+                screen.blit(self.avatar, 5, 37)
+            except Exception as e:
+                drawDefaultAvatar()
 
+def drawDefaultAvatar():
+    # create a spinning loading animation while we wait for the avatar to load
+    screen.brush = phosphor
+    squircle = shapes.squircle(0, 0, 10, 5)
+    screen.brush = brushes.color(211, 250, 55, 50)
+    for i in range(4):
+        mul = math.sin(io.ticks / 1000) * 14000
+        squircle.transform = Matrix().translate(42, 75).rotate(
+            (io.ticks + i * mul) / 40).scale(1 + i / 1.3)
+        screen.draw(squircle)
 
 user = User()
 connected = file_exists("/contrib_data.json") and file_exists("/user_data.json") and file_exists("/avatar.png")

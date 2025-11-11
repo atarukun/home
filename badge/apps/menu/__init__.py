@@ -88,7 +88,9 @@ def update():
             icons = load_page_icons(current_page)
             active = 0
         else:
-            # Wrap to beginning
+            # Wrap to beginning (first page, first icon)
+            current_page = 0
+            icons = load_page_icons(current_page)
             active = 0
     elif active < 0:
         if current_page > 0:
@@ -97,7 +99,9 @@ def update():
             icons = load_page_icons(current_page)
             active = len(icons) - 1
         else:
-            # Wrap to end
+            # Wrap to last page, last icon
+            current_page = total_pages - 1
+            icons = load_page_icons(current_page)
             active = len(icons) - 1
     
     # Launch app with error handling
@@ -136,7 +140,7 @@ def update():
         page_label = f"{current_page + 1}/{total_pages}"
         w, _ = screen.measure_text(page_label)
         screen.brush = brushes.color(211, 250, 55, 150)
-        screen.text(page_label, 160 - w - 5, 112)
+        screen.text(page_label, 160 - w - 5, 108)
 
     if alpha <= MAX_ALPHA:
         screen.brush = brushes.color(0, 0, 0, 255 - alpha)
